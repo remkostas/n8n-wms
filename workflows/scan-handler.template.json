@@ -1,0 +1,693 @@
+{
+  "name": "WMS: Scan Handler",
+  "nodes": [
+    {
+      "id": "wh",
+      "name": "Scan Submit",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wms/scan",
+        "responseMode": "responseNode"
+      },
+      "position": [
+        0,
+        0
+      ],
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "webhookId": "wms-scan"
+    },
+    {
+      "id": "read",
+      "name": "Read Request",
+      "parameters": {
+        "jsCode": "@file:scan_read_request.js",
+        "language": "javaScript",
+        "mode": "runOnceForAllItems"
+      },
+      "position": [
+        200,
+        0
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "credentials": {
+        "postgres": {
+          "id": "@postgres_credential_id",
+          "name": "WMS Postgres"
+        }
+      },
+      "id": "sess",
+      "name": "Load Session",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "queryReplacement": "={{ $json.token_param }}"
+        },
+        "query": "SELECT * FROM wms.screen_data($1)"
+      },
+      "position": [
+        400,
+        0
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6
+    },
+    {
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "@postgres_credential_id",
+          "name": "WMS Postgres"
+        }
+      },
+      "id": "resolve",
+      "name": "Resolve Scan",
+      "notes": "alwaysOutputData because an unrecognised barcode legitimately returns no rows, and the flow must continue to tell the operator so. The sentinel '-' covers action-only submits (menu buttons) where no code was scanned: an empty parameter would be dropped by the comma-split binding rather than passed as an empty string.",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "queryReplacement": "={{ $('Scan Submit').first().json.body.code || '-' }}"
+        },
+        "query": "SELECT * FROM wms.resolve_barcode($1)"
+      },
+      "position": [
+        600,
+        0
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6
+    },
+    {
+      "id": "decide",
+      "name": "Decide Transition",
+      "notes": "Pure function: no writes. The business rules stay here on the canvas rather than following the mutations into plpgsql.",
+      "parameters": {
+        "jsCode": "@file:decide_transition.js",
+        "language": "javaScript",
+        "mode": "runOnceForAllItems"
+      },
+      "position": [
+        800,
+        0
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "id": "switch",
+      "name": "Which Operation",
+      "parameters": {
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "Unknown"
+        },
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.op }}",
+                    "operator": {
+                      "operation": "equals",
+                      "type": "string"
+                    },
+                    "rightValue": "none"
+                  }
+                ],
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                }
+              },
+              "outputKey": "none"
+            },
+            {
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.op }}",
+                    "operator": {
+                      "operation": "equals",
+                      "type": "string"
+                    },
+                    "rightValue": "login"
+                  }
+                ],
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                }
+              },
+              "outputKey": "login"
+            },
+            {
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.op }}",
+                    "operator": {
+                      "operation": "equals",
+                      "type": "string"
+                    },
+                    "rightValue": "receive"
+                  }
+                ],
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                }
+              },
+              "outputKey": "receive"
+            },
+            {
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.op }}",
+                    "operator": {
+                      "operation": "equals",
+                      "type": "string"
+                    },
+                    "rightValue": "claim_pick"
+                  }
+                ],
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                }
+              },
+              "outputKey": "claim_pick"
+            },
+            {
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.op }}",
+                    "operator": {
+                      "operation": "equals",
+                      "type": "string"
+                    },
+                    "rightValue": "confirm_pick"
+                  }
+                ],
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                }
+              },
+              "outputKey": "confirm_pick"
+            }
+          ]
+        }
+      },
+      "position": [
+        1000,
+        0
+      ],
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2
+    },
+    {
+      "id": "noop",
+      "name": "No Mutation",
+      "notes": "Navigation, validation failures and mis-scans all land here: the session state changes but nothing else does.",
+      "position": [
+        1220,
+        -180
+      ],
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "parameters": {}
+    },
+    {
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "@postgres_credential_id",
+          "name": "WMS Postgres"
+        }
+      },
+      "id": "login",
+      "name": "Start Session",
+      "notes": "Zero rows means an unknown or inactive badge; alwaysOutputData keeps the flow alive so the operator gets told.",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "queryReplacement": "={{ $json.badge }}"
+        },
+        "query": "SELECT * FROM wms.session_start($1)"
+      },
+      "position": [
+        1220,
+        -60
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6
+    },
+    {
+      "credentials": {
+        "postgres": {
+          "id": "@postgres_credential_id",
+          "name": "WMS Postgres"
+        }
+      },
+      "id": "recv",
+      "name": "Receive Line",
+      "notes": "One call: ledger row, on-hand move, PO line update and put-away task, all atomic. It has to be one call -- n8n cannot hold a transaction open across nodes.",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "queryReplacement": "={{ $json.po_line_id }},{{ $json.qty }},{{ $('Load Session').first().json.user_id }}"
+        },
+        "query": "SELECT * FROM wms.receive_line($1, $2, $3)"
+      },
+      "position": [
+        1220,
+        60
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6
+    },
+    {
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "@postgres_credential_id",
+          "name": "WMS Postgres"
+        }
+      },
+      "id": "claim",
+      "name": "Claim Next Pick",
+      "notes": "FOR UPDATE SKIP LOCKED inside, so ten pickers asking at once get ten different tasks instead of queueing on one row.",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "queryReplacement": "={{ $('Load Session').first().json.user_id }}"
+        },
+        "query": "SELECT * FROM wms.claim_next_pick($1)"
+      },
+      "position": [
+        1220,
+        180
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6
+    },
+    {
+      "credentials": {
+        "postgres": {
+          "id": "@postgres_credential_id",
+          "name": "WMS Postgres"
+        }
+      },
+      "id": "confirm",
+      "name": "Confirm Pick",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "queryReplacement": "={{ $json.task_id }},{{ $json.qty }},{{ $('Load Session').first().json.user_id }}"
+        },
+        "query": "SELECT * FROM wms.confirm_pick($1, $2, $3)"
+      },
+      "position": [
+        1220,
+        300
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6
+    },
+    {
+      "id": "next",
+      "name": "Next State",
+      "parameters": {
+        "jsCode": "@file:next_state.js",
+        "language": "javaScript",
+        "mode": "runOnceForAllItems"
+      },
+      "position": [
+        1460,
+        60
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "@postgres_credential_id",
+          "name": "WMS Postgres"
+        }
+      },
+      "id": "save",
+      "name": "Save Session State",
+      "notes": "The context patch arrives base64-encoded because this node binds parameters by splitting the list on commas -- raw JSON with more than one key would be torn into several bogus parameters. alwaysOutputData because an expired session updates zero rows, and without it the redirect downstream would never run -- turning 'your session expired' into a blank page. Build Redirect reads $('Next State') explicitly, so the synthetic empty item is harmless.",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "queryReplacement": "={{ $('Read Request').first().json.token_param }},{{ $json.next_state }},{{ $json.ctx_patch_b64 }}"
+        },
+        "query": "SELECT * FROM wms.session_set_state($1, $2, convert_from(decode($3, 'base64'), 'utf8')::jsonb)"
+      },
+      "position": [
+        1660,
+        60
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6
+    },
+    {
+      "id": "redir",
+      "name": "Build Redirect",
+      "parameters": {
+        "jsCode": "@file:redirect_base.js+build_redirect.js",
+        "language": "javaScript",
+        "mode": "runOnceForAllItems"
+      },
+      "position": [
+        1860,
+        60
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "id": "respr",
+      "name": "Redirect To Terminal",
+      "notes": "303, not the node's 307 default. A 307 preserves the POST method on the follow-up request, which would re-submit the scan against a GET-only route.",
+      "parameters": {
+        "options": {
+          "responseCode": 303,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Set-Cookie",
+                "value": "={{ $json.cookie || '' }}"
+              }
+            ]
+          }
+        },
+        "redirectURL": "={{ $json.location }}",
+        "respondWith": "redirect"
+      },
+      "position": [
+        2060,
+        60
+      ],
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5
+    },
+    {
+      "id": "lredir",
+      "name": "Build Login Redirect",
+      "parameters": {
+        "jsCode": "@file:redirect_base.js+build_login_redirect.js",
+        "language": "javaScript",
+        "mode": "runOnceForAllItems"
+      },
+      "position": [
+        1460,
+        -60
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "id": "resplogin",
+      "name": "Redirect After Login",
+      "notes": "The only place a cookie is issued. HttpOnly and SameSite=Lax are set by hand in the Code node; n8n offers no cookie helper.",
+      "parameters": {
+        "options": {
+          "responseCode": 303,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Set-Cookie",
+                "value": "={{ $json.cookie }}"
+              }
+            ]
+          }
+        },
+        "redirectURL": "={{ $json.location }}",
+        "respondWith": "redirect"
+      },
+      "position": [
+        1860,
+        -60
+      ],
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5
+    },
+    {
+      "id": "s2",
+      "name": "Note s2",
+      "parameters": {
+        "color": 4,
+        "content": "### One scan, one transition\n\nRead the session → resolve the barcode → decide → mutate → save state → 303 back to the terminal.\n\nThe Switch exists because each mutation is a different SQL function with a different signature. Only one branch ever runs, so the convergence on **Next State** is safe without a Merge node.",
+        "height": 200,
+        "width": 1180
+      },
+      "position": [
+        -60,
+        -420
+      ],
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1
+    },
+    {
+      "id": "s3",
+      "name": "Note s3",
+      "parameters": {
+        "color": 3,
+        "content": "### Why the mutations are SQL functions\n\nEvery warehouse movement writes the ledger *and* moves on-hand, and those must not be able to diverge. n8n gives each Postgres node its own connection and its own statement, with no way to wrap several in one transaction — so each mutation had to become a single call.\n\nCost: about 3 ms. Consequence: the interesting business logic lives in `db/02-functions.sql`, not on this canvas.",
+        "height": 200,
+        "width": 700
+      },
+      "position": [
+        1160,
+        -420
+      ],
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1
+    }
+  ],
+  "connections": {
+    "Build Login Redirect": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Redirect After Login",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Build Redirect": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Redirect To Terminal",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Claim Next Pick": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Next State",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Confirm Pick": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Next State",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Decide Transition": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Which Operation",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Load Session": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Resolve Scan",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Next State": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Save Session State",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "No Mutation": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Next State",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Read Request": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Load Session",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Receive Line": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Next State",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Resolve Scan": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Decide Transition",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Save Session State": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Build Redirect",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Scan Submit": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Read Request",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Start Session": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Build Login Redirect",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Which Operation": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "No Mutation",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "Start Session",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "Receive Line",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "Claim Next Pick",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "Confirm Pick",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "No Mutation",
+            "type": "main"
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

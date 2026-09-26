@@ -1,0 +1,73 @@
+# n8n-wms: a barcode warehouse terminal served from n8n webhooks over PostgreSQL.
+#
+#   cp .env.example .env        # then set the three secrets
+#   docker compose up -d
+#   scripts/setup.sh            # owner account, credential, workflows -- no UI clicks
+#
+# Terminal: http://localhost:5678/webhook/wms
+
+name: n8n-wms
+
+services:
+  postgres:
+    image: postgres:16.15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-wms}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      # The WMS data lives in this database; db/00-n8n-database.sql adds a
+      # second one for n8n's own tables. One server, two databases -- the shape
+      # a customer would actually run.
+      POSTGRES_DB: wms
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # First boot only: creates the n8n database, then the wms schema,
+      # functions and demo data. scripts/reset-db.sh re-applies db/01-03 later.
+      - ./db:/docker-entrypoint-initdb.d:ro
+    # Published on loopback so the acceptance test and benchmark can check the
+    # database directly with psql. Not needed by n8n itself.
+    ports:
+      - "${POSTGRES_BIND:-127.0.0.1:55432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-wms} -d wms"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  n8n:
+    # Pinned, and upstream rather than a custom build: a customer has to be able
+    # to run exactly this image.
+    image: docker.n8n.io/n8nio/n8n:2.40.7
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # n8n keeps its own data in Postgres, not the default SQLite. SQLite
+      # serialises writers, and a WMS writes one execution row per scan: under
+      # load that shows up as "n8n is slow" when it is really "SQLite is
+      # single-writer".
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_DATABASE: n8n
+      DB_POSTGRESDB_USER: ${POSTGRES_USER:-wms}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?set N8N_ENCRYPTION_KEY in .env}
+      GENERIC_TIMEZONE: ${TZ:-Europe/Berlin}
+      # Plain HTTP demo. Behind TLS, drop this line.
+      N8N_SECURE_COOKIE: "false"
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_PERSONALIZATION_ENABLED: "false"
+      # Deliberately NOT set: N8N_INSECURE_DISABLE_WEBHOOK_IFRAME_SANDBOX.
+      # n8n serves webhook HTML inside a CSP sandbox that blocks cookies on form
+      # POSTs. The terminal copes by carrying its session token in the URL and a
+      # hidden form field as well as the cookie, so it runs on a stock instance.
+      # Why, and the alternatives: docs/csp-sandbox.md.
+    volumes:
+      - n8ndata:/home/node/.n8n
+    ports:
+      - "${N8N_BIND:-127.0.0.1:5678}:5678"
+
+volumes:
+  pgdata:
+  n8ndata:

@@ -1,0 +1,167 @@
+{
+  "name": "WMS: Operator Terminal",
+  "nodes": [
+    {
+      "id": "wh",
+      "name": "Terminal Request",
+      "notes": "No authentication on the webhook itself: the session cookie is the auth, checked in SQL on every request. n8n's built-in Basic Auth is per-webhook, not per-operator, so it cannot express 'who is scanning'.",
+      "parameters": {
+        "options": {},
+        "path": "wms",
+        "responseMode": "responseNode"
+      },
+      "position": [
+        0,
+        0
+      ],
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "webhookId": "wms-terminal"
+    },
+    {
+      "id": "read",
+      "name": "Read Request",
+      "notes": "Hand-rolled cookie parsing -- n8n has no session primitive.",
+      "parameters": {
+        "jsCode": "@file:terminal_read_request.js"
+      },
+      "position": [
+        224,
+        0
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "credentials": {
+        "postgres": {
+          "id": "@postgres_credential_id",
+          "name": "WMS Postgres"
+        }
+      },
+      "id": "screen",
+      "name": "Load Screen Data",
+      "notes": "One call returns whatever the current state's screen needs. Always returns exactly one row: an expired or missing cookie comes back as state='login' rather than as an empty result, so there is no empty-result branch to get wrong.",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "queryReplacement": "={{ $json.token_param }}"
+        },
+        "query": "SELECT * FROM wms.screen_data($1)"
+      },
+      "position": [
+        448,
+        0
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6
+    },
+    {
+      "id": "render",
+      "name": "Render Screen",
+      "notes": "Every screen renders here. n8n has no way to share code between Code nodes, so the alternatives were duplicating the page chrome per screen or paying an extra workflow execution for a shared render sub-workflow. See the sticky note.",
+      "parameters": {
+        "jsCode": "@file:render_screen.js"
+      },
+      "position": [
+        672,
+        0
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "id": "resp",
+      "name": "Send Screen",
+      "parameters": {
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=UTF-8"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        },
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}"
+      },
+      "position": [
+        880,
+        0
+      ],
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5
+    },
+    {
+      "id": "s1",
+      "name": "Note s1",
+      "parameters": {
+        "color": 4,
+        "content": "### The entire read side of the WMS\n\nFive nodes serve every operator screen: login, menu, receiving (3 sub-states), picking (3 sub-states) and stock lookup.\n\nIt stays this small only because the per-screen query dispatch was pushed into `wms.screen_data()` and the per-screen HTML into one Code node. Doing either the n8n-native way — a Switch fanning out to a Postgres node and a Code node per state — would be roughly 20 nodes for the same behaviour, and the page chrome would exist in five copies.\n\nSo the canvas is readable, but it no longer tells you what the UI does. That trade-off is the finding, not a shortcut.",
+        "height": 294,
+        "width": 1000
+      },
+      "position": [
+        0,
+        -320
+      ],
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1
+    }
+  ],
+  "connections": {
+    "Load Screen Data": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Render Screen",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Read Request": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Load Screen Data",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Render Screen": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Send Screen",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Terminal Request": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Read Request",
+            "type": "main"
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
