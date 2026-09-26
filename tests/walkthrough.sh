@@ -11,6 +11,7 @@
 # browser (docs/csp-sandbox.md). The "sandboxed browser" section below simulates
 # the browser's behaviour by dropping cookies, but only a real browser proves it.
 set -euo pipefail
+# shellcheck source=scripts/lib.sh
 . "$(dirname "$0")/../scripts/lib.sh"
 
 "$REPO_ROOT/scripts/reset-db.sh" >/dev/null
@@ -59,6 +60,9 @@ html() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e "s/'/\&#39;/g" -e 's/"/\&qu
 
 see()     { if grep -qF -- "$(html "$1")" <<<"$PAGE"; then ok "$2"; else fail "$2 (expected to see: $1)"; fi; }
 not_see() { if grep -qF -- "$(html "$1")" <<<"$PAGE"; then fail "$2 (should not see: $1)"; else ok "$2"; fi; }
+# The SQL backstops, called directly: the terminal's own checks fire first, so
+# driving the UI alone would never prove the database refuses on its own.
+refused() { if wms_psql -c "$1" >/dev/null 2>&1; then fail "$2 (was accepted)"; else ok "$2"; fi; }
 db()      { local got; got="$(wms_sql "$1")"; if [ "$got" = "$2" ]; then ok "$3"; else fail "$3 (db: expected $2, got $got)"; fi; }
 
 # ---------------------------------------------------------------- A. sessions
@@ -76,6 +80,9 @@ see "Signed in as Marijke Bakker" "A3 known badge signs in"
 see "Lines to receive" "A3 lands on the menu"
 db "SELECT count(*) FROM wms.operator_sessions" 1 "A3 one session row"
 
+PAGE="$(curl -sS -H 'Cookie: other_app=%E0%A4%A' "$TERMINAL_URL")"
+see "Quick demo sign-in" "A6 a malformed cookie from another app doesn't break the terminal"
+
 # ---------------------------------------------------------------- B. receiving
 
 section "B. Receiving"
@@ -88,7 +95,7 @@ see "4000000001007" "B2 open lines listed with their barcodes"
 not_see "Hex bolt M8x40" "B2 fully received line 1 is not offered"
 
 scan m receive_item LOC-A-01-1
-see "Expected a article, but that barcode is location (A-01-1)." "B3 wrong kind of barcode is named"
+see "Expected an article, but that barcode is location (A-01-1)." "B3 wrong kind of barcode is named"
 
 scan m receive_item NOT-A-BARCODE
 see "Unknown barcode: NOT-A-BARCODE" "B4 unknown barcode"
@@ -106,6 +113,7 @@ done
 scan m receive_qty 999
 see "Only 200 still open on this line. Enter 200 or less." "B14 over-receipt refused"
 db "SELECT received_qty FROM wms.purchase_order_lines WHERE id = 3" 0 "B14 ...nothing partially applied"
+refused "SELECT * FROM wms.receive_line(3, 201, 1)" "B14 receive_line() refuses it on its own too"
 
 scan m receive_qty 25
 see "Received 25 of 200 × Wire ferrule 1.5mm. Put-away task created." "B7 receipt booked"
@@ -139,10 +147,19 @@ scan m pick_item 4000000001006
 see "Wrong article. This task wants Hex nut M8." "D4 wrong article refused"
 scan m pick_item 4000000001002
 see "Quantity picked" "D5 right article accepted"
+for bad in -1 abc 2.5; do
+  scan m pick_qty "$bad"
+  see "Enter how many you picked (0 if none)." "D9-11 quantity '$bad' refused"
+done
+scan m pick_qty 25
+see "This task is for 20. Enter 20 or less." "D12 over-pick refused"
+db "SELECT picked_qty FROM wms.sales_order_lines WHERE id = 1" 0 "D12 ...nothing partially applied"
+refused "SELECT * FROM wms.confirm_pick(1, 21, 1)" "D12 confirm_pick() refuses it on its own too"
+
 scan m pick_qty 20
 see "Picked 20 × Hex nut M8." "D6 pick confirmed"
 db "SELECT qty FROM wms.stock_on_hand WHERE sku = 'SKU-1002'" 100 "D6 shelf stock reduced once"
-db "SELECT status FROM wms.pick_tasks WHERE id = 1" done "D6 task done"
+db "SELECT status FROM wms.pick_tasks WHERE id = 1" "done" "D6 task done"
 db "SELECT status FROM wms.sales_orders WHERE order_number = 'SO-2075'" picking "D6 order in progress"
 
 section "E. Two operators"
@@ -157,6 +174,9 @@ db "SELECT count(DISTINCT assigned_user_id) FROM wms.pick_tasks WHERE status = '
 
 scan m pick_location LOC-C-01-1
 scan m pick_item 4000000001009
+scan m pick_qty 10
+see "The system shows only 8 at C-01-1. Enter 8 or less and report the difference." "D8 more than on the shelf is refused with a message"
+db "SELECT status FROM wms.pick_tasks WHERE id = 3" in_progress "D8 ...and the task stays open"
 scan m pick_qty 8
 see "Short pick recorded: 8 of 10 × DIN rail 35mm. 2 still owed." "D7 short pick recorded honestly"
 db "SELECT status FROM wms.pick_tasks WHERE id = 3" short "D7 task marked short"
@@ -194,7 +214,7 @@ see "Quick demo sign-in" "A5 cookie is cleared"
 section "H. Sandboxed browser (no cookies, token in URL and form)"
 scan nocookie login BADGE-1003
 see "Signed in as Sara Yilmaz" "H1 login without a cookie jar"
-[ -n "$TOKEN" ] && ok "H1 session token carried in the redirect" || fail "H1 no token in redirect"
+if [ -n "$TOKEN" ]; then ok "H1 session token carried in the redirect"; else fail "H1 no token in redirect"; fi
 scan nocookie start_lookup
 see "Scan an article" "H2 next POST keeps the session via the form field"
 TOKEN=""
@@ -210,6 +230,9 @@ db "SELECT count(*) FROM (
                    FROM wms.inventory_transactions GROUP BY 1, 2) t
              USING (product_id, location_id)
       WHERE i.qty <> COALESCE(t.s, 0)) x" 0 "ledger sum equals on-hand everywhere"
+db "SELECT count(*) FROM wms.pick_tasks WHERE picked_qty > qty" 0 "no task is over-picked"
+db "SELECT count(*) FROM wms.sales_order_lines WHERE picked_qty > ordered_qty" 0 "no order line is over-picked"
+db "SELECT count(*) FROM wms.purchase_order_lines WHERE received_qty > ordered_qty" 0 "no order line is over-received"
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

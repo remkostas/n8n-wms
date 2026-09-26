@@ -1,5 +1,7 @@
 # n8n-wms
 
+[![CI](https://github.com/remkostas/n8n-wms/actions/workflows/ci.yml/badge.svg)](https://github.com/remkostas/n8n-wms/actions/workflows/ci.yml)
+
 **A barcode-driven warehouse terminal built on n8n and PostgreSQL, and a measured answer to whether you should build one.**
 
 I built a working warehouse management system to test a product idea: a self-hosted WMS for small warehouses, with n8n as the workflow engine and UI server, PostgreSQL as the only system of record, and handheld scanners on the floor. Then I measured it and decided not to sell it.
@@ -58,16 +60,23 @@ Open **http://localhost:5678/webhook/wms** and sign in as one of the demo operat
 2. Reload the page halfway through. Nothing is lost.
 3. Picks waiting → work through the tasks. The third asks for 10 DIN rails where only 8 are on the shelf; enter `8` and it records a short pick.
 
+| Sign in | Receiving | After a short pick |
+|:---:|:---:|:---:|
+| <img src="docs/img/sign-in.png" width="240" alt="Sign-in screen with one-tap demo operators"> | <img src="docs/img/receiving.png" width="240" alt="Receiving: open lines with the barcode to scan"> | <img src="docs/img/short-pick.png" width="240" alt="Menu after a short pick was recorded"> |
+
 The full reference data and a 10-minute demo script are in [docs/TEST-CASES.md](docs/TEST-CASES.md). To open it from a phone, set `N8N_BIND` in `.env` to an address the phone can reach.
 
 ## Test it
 
 ```bash
-tests/walkthrough.sh              # 56 checks: screens and database, resets itself
+node --test tests/unit/*.test.js  # 40 unit tests of the Code-node logic; no stack needed
+tests/walkthrough.sh              # 69 checks: screens and database, resets itself
 bench/bench.py contention         # 400 concurrent receipts, must reconcile exactly
 ```
 
 The acceptance test drives the terminal over HTTP the way a browser does and checks the database after every mutation. It resets the `wms` schema, so don't run it while someone is using the terminal.
+
+[CI](.github/workflows/ci.yml) runs all three on every push: lint and unit tests, then the real compose stack from scratch, `setup.sh`, the full acceptance test and a 100-receipt contention run.
 
 ## Repository
 
@@ -77,8 +86,10 @@ The acceptance test drives the terminal over HTTP the way a browser does and che
 | `src/terminal/` | The JavaScript that runs inside n8n's Code nodes, kept as real files so it can be reviewed |
 | `workflows/` | Workflow templates; `scripts/build_workflows.py` injects `src/` into them |
 | `scripts/` | `setup.sh` (install via the n8n API), `reset-db.sh` (back to demo data) |
-| `tests/` | The acceptance test |
+| `tests/` | The acceptance test, and unit tests for the Code-node logic (`tests/unit/`) |
 | `bench/` | Load and contention benchmark, standard library only |
+| `.github/workflows/` | CI: ShellCheck, unit tests, then the whole stack end to end |
+| `CLAUDE.md` | Working notes for coding agents: the rules that aren't obvious from the code |
 | `docs/` | [Feasibility](docs/FEASIBILITY.md), [benchmark](docs/BENCHMARK.md), [CSP sandbox](docs/csp-sandbox.md), [commercial conclusion](docs/COMMERCIAL.md), [test cases](docs/TEST-CASES.md) |
 
 ## What I'd do differently
@@ -90,7 +101,7 @@ The acceptance test drives the terminal over HTTP the way a browser does and che
 
 ## Not built
 
-A put-away completion screen (the SQL function exists), packing and labels, cycle counts, ERP and carrier integration, offline mode, role enforcement, and testing on physical scanner hardware. Picking more than is on the shelf is refused correctly but shows a bare error instead of a message ([TEST-CASES D8](docs/TEST-CASES.md#d-picking)).
+A put-away completion screen (the SQL function exists), packing and labels, cycle counts, ERP and carrier integration, offline mode, role enforcement, and testing on physical scanner hardware.
 
 ## Licence
 

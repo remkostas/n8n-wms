@@ -10,6 +10,7 @@
 # Safe to re-run: that is also how a change to src/terminal/ gets deployed.
 # Requires curl, jq and python3.
 set -euo pipefail
+# shellcheck source=scripts/lib.sh
 . "$(dirname "$0")/lib.sh"
 
 STATE="$REPO_ROOT/.setup-state"
@@ -25,12 +26,15 @@ die() { printf 'setup: %s\n' "$*" >&2; exit 1; }
 
 # ---------------------------------------------------------------- wait for n8n
 
+# /healthz/readiness, not /healthz: on first boot /healthz answers 200 while n8n
+# is still migrating its database, and every /rest call in that window returns
+# a plain-text "n8n is starting up" page instead of JSON.
 say "waiting for n8n at $N8N_URL"
-for _ in $(seq 1 60); do
-  curl -sf "$N8N_URL/healthz" >/dev/null && break
+for _ in $(seq 1 90); do
+  curl -sf "$N8N_URL/healthz/readiness" >/dev/null && break
   sleep 2
 done
-curl -sf "$N8N_URL/healthz" >/dev/null || die "n8n did not come up (docker compose logs n8n)"
+curl -sf "$N8N_URL/healthz/readiness" >/dev/null || die "n8n did not come up (docker compose logs n8n)"
 
 # ---------------------------------------------------------------- owner + login
 

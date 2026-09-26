@@ -22,7 +22,12 @@ for (const part of String(raw).split(';')) {
   if (!s) continue;
   const eq = s.indexOf('=');
   if (eq < 1) continue;
-  cookies[s.slice(0, eq)] = decodeURIComponent(s.slice(eq + 1));
+  // Every cookie for this host arrives here, not just ours, and one malformed
+  // %-escape in any of them would make decodeURIComponent throw and take the
+  // whole terminal down with a 500. Keep the raw value instead.
+  let value = s.slice(eq + 1);
+  try { value = decodeURIComponent(value); } catch (e) { /* keep it raw */ }
+  cookies[s.slice(0, eq)] = value;
 }
 
 // The `t` form field (added by Render Screen to every authenticated form) is

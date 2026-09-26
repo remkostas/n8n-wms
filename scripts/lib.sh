@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Shared by scripts/, tests/ and bench/. Source it; don't run it.
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -16,6 +17,7 @@ POSTGRES_USER="${POSTGRES_USER:-wms}"
 N8N_BIND="${N8N_BIND:-127.0.0.1:5678}"
 POSTGRES_BIND="${POSTGRES_BIND:-127.0.0.1:55432}"
 N8N_URL="${N8N_URL:-http://$N8N_BIND}"
+# shellcheck disable=SC2034  # used by the scripts that source this file
 TERMINAL_URL="$N8N_URL/webhook/wms"
 
 # psql against the wms database. Uses a local psql client over the published

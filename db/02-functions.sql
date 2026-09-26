@@ -536,6 +536,14 @@ BEGIN
       USING ERRCODE = 'invalid_parameter_value';
   END IF;
 
+  -- Over-pick backstop, for the same reason receive_line() has an over-receipt
+  -- one: the terminal bound-checks, but the invariant belongs with the data.
+  IF p_qty > v_task.qty THEN
+    RAISE EXCEPTION 'over-pick on task %: % requested, % attempted',
+      v_task.id, v_task.qty, p_qty
+      USING ERRCODE = 'check_violation';
+  END IF;
+
   IF p_qty > 0 THEN
     v_new_qty := wms.apply_movement(v_task.product_id, v_task.location_id, -p_qty,
                                     'pick', p_user_id, 'pick_task', v_task.id);
