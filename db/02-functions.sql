@@ -6,8 +6,8 @@
 -- wrap several nodes in one transaction. So each mutation is a single function
 -- call that does all of its writes atomically, with SELECT ... FOR UPDATE where
 -- operators could collide. Cost: about 3 ms per call. Proven under contention
--- in bench/: 400 concurrent receipts of one article leave on_hand, ledger rows
--- and ledger sum at exactly 400.
+-- in bench/: 400 receipts of one article from 10 operators at once leave
+-- on_hand, ledger rows and ledger sum at exactly 400.
 --
 -- The consequence, and the main finding of the project: the business logic
 -- lives here, not on the n8n canvas. See docs/FEASIBILITY.md.
@@ -53,26 +53,6 @@ BEGIN
   user_name := v_user.name;
   state     := v_sess.state;
   context   := v_sess.context;
-  RETURN NEXT;
-END $$;
-
-CREATE OR REPLACE FUNCTION wms.session_touch(p_token text) RETURNS TABLE(token text, user_id bigint, user_name text, state text, context jsonb)
-    LANGUAGE plpgsql
-    AS $$
-DECLARE v_sess wms.operator_sessions%ROWTYPE;
-BEGIN
-  UPDATE wms.operator_sessions s SET last_seen_at = now()
-   WHERE s.token = p_token AND s.last_seen_at > now() - INTERVAL '12 hours'
-   RETURNING * INTO v_sess;
-  IF NOT FOUND THEN
-    RETURN;
-  END IF;
-
-  token   := v_sess.token;
-  user_id := v_sess.user_id;
-  state   := v_sess.state;
-  context := v_sess.context;
-  SELECT u.name INTO user_name FROM wms.users u WHERE u.id = v_sess.user_id;
   RETURN NEXT;
 END $$;
 
@@ -143,13 +123,6 @@ BEGIN
       'open_picks',    (SELECT count(*) FROM wms.pick_tasks WHERE status IN ('open','in_progress')),
       'open_putaways', (SELECT count(*) FROM wms.putaway_tasks WHERE status = 'open')
     ) INTO payload;
-
-  ELSIF v_state = 'receiving_await_po' THEN
-    SELECT jsonb_build_object(
-      'orders', COALESCE(jsonb_agg(DISTINCT jsonb_build_object(
-                  'order_number', r.order_number, 'vendor', r.vendor,
-                  'open_lines', 1)), '[]'::jsonb)
-    ) INTO payload FROM wms.open_receipt_lines r;
 
   ELSIF v_state IN ('receiving_await_item', 'receiving_await_qty') THEN
     SELECT jsonb_build_object(
@@ -265,16 +238,6 @@ BEGIN
   RETURN NEXT;
 END $$;
 
-CREATE OR REPLACE FUNCTION wms.find_receipt_line(p_po_id bigint, p_product_id bigint) RETURNS TABLE(po_line_id bigint, sku text, product_name text, open_qty integer)
-    LANGUAGE sql STABLE
-    AS $$
-  SELECT r.po_line_id, r.sku, r.product_name, r.open_qty
-    FROM wms.open_receipt_lines r
-   WHERE r.purchase_order_id = p_po_id AND r.product_id = p_product_id
-   ORDER BY r.line_number
-   LIMIT 1;
-$$;
-
 -- ==========================================================================
 -- The ledger -- every stock movement goes through here
 -- ==========================================================================
@@ -311,9 +274,18 @@ DECLARE
   v_delta INTEGER;
   v_new   INTEGER;
 BEGIN
-  SELECT COALESCE(i.qty, 0) INTO v_prev FROM wms.inventory i
-   WHERE i.product_id = p_product_id AND i.location_id = p_location_id;
-  v_prev  := COALESCE(v_prev, 0);
+  -- Lock the balance before reading it. A count sets an absolute quantity, so
+  -- the delta depends on the current one: read without the lock, twenty
+  -- concurrent counts of 5 all saw 0, all added 5, and left 30 on the shelf.
+  -- The zero-row insert makes sure there is a row to lock; qty 0 with no
+  -- ledger rows keeps the ledger invariant.
+  INSERT INTO wms.inventory (product_id, location_id, qty)
+  VALUES (p_product_id, p_location_id, 0)
+  ON CONFLICT (product_id, location_id) DO NOTHING;
+
+  SELECT i.qty INTO v_prev FROM wms.inventory i
+   WHERE i.product_id = p_product_id AND i.location_id = p_location_id
+   FOR UPDATE;
   v_delta := p_counted_qty - v_prev;
 
   IF v_delta = 0 THEN
@@ -534,6 +506,14 @@ BEGIN
   IF v_task.status NOT IN ('open', 'in_progress') THEN
     RAISE EXCEPTION 'pick task % is already %', p_task_id, v_task.status
       USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  -- Over-pick backstop, for the same reason receive_line() has an over-receipt
+  -- one: the terminal bound-checks, but the invariant belongs with the data.
+  IF p_qty > v_task.qty THEN
+    RAISE EXCEPTION 'over-pick on task %: % requested, % attempted',
+      v_task.id, v_task.qty, p_qty
+      USING ERRCODE = 'check_violation';
   END IF;
 
   IF p_qty > 0 THEN

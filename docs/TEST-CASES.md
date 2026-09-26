@@ -97,6 +97,7 @@ Tasks are handed out in walking order (`pick_sequence`), so task 1 comes first.
 | A3 | auto | Scan `BADGE-1001` | Menu, greeted as *Marijke Bakker* |
 | A4 | manual | Sign in as `BADGE-1003` (Sara, supervisor) | Works the same. **The role is stored but not enforced**: no supervisor-only screens exist |
 | A5 | auto | Press "Sign out" | "Signed out.", back to the sign-in screen, cookie cleared |
+| A7 | auto | Type `BADGE-1001,BADGE-1002` as the badge | "Badge not recognised." **Signed in as Marijke**: n8n's Postgres node splits parameters on commas and drops the extras, so only `BADGE-1001` was looked up. Scanned values now travel base64-encoded |
 
 ## B. Receiving
 
@@ -104,8 +105,9 @@ Tasks are handed out in walking order (`pick_sequence`), so task 1 comes first.
 |---|---|---|---|
 | B1 | auto | Menu → Lines to receive | "Scan the purchase order" |
 | B2 | auto | Scan `PO-1042` | "Receiving PO-1042" and the open lines. **Line 1 (Hex bolt) is absent** because it's already fully received |
-| B3 | auto | Scan `LOC-A-01-1` at the article step | "Expected a article, but that barcode is location (A-01-1)." It names what you *did* scan |
+| B3 | auto | Scan `LOC-A-01-1` at the article step | "Expected an article, but that barcode is location (A-01-1)." It names what you *did* scan |
 | B4 | auto | Scan `NOT-A-BARCODE` | "Unknown barcode: NOT-A-BARCODE" |
+| B4b | auto | Scan `4000000001007,x` | "Unknown barcode: 4000000001007,x". **Was accepted as `4000000001007`**, for the same reason as A7 |
 | B5 | auto | Scan `4000000001002` (Hex nut, not on this order) | "…is not on this order, or is already fully received." |
 | B6 | manual | Scan `4000000001001` (Hex bolt, on the order but closed) | Same refusal. Closed lines can't be received |
 | B7 | auto | Scan `4000000001007`, enter `25` | "Received 25 of 200 × Wire ferrule 1.5mm. Put-away task created." |
@@ -124,12 +126,13 @@ These two found real bugs during the evaluation, both since fixed. They're the c
 
 After B10–B14, `received_qty` on that line must still be `0`. Nothing was partly applied.
 
-## C. Put-away
+## C. Put-away and stock counts
 
 | # | | Steps | Expected |
 |---|---|---|---|
 | C1 | auto | Receive anything (B7) | A put-away task is created automatically, from `DOCK-IN`, with a suggested destination |
 | C2 | manual | Complete it via SQL (there is no put-away screen, see *Not built*): `SELECT * FROM wms.complete_putaway(1, (SELECT id FROM wms.locations WHERE code = 'B-02-1'), 1);` | Stock leaves `DOCK-IN` and lands in the bin; two ledger rows (`putaway_out`, `putaway_in`); the ledger query in G still returns zero |
+| C3 | auto | 20 simultaneous `wms.adjust_stock()` counts of 5 on one bin (there is no count screen, see *Not built*) | 5 on the shelf, one ledger row. **Was 30 on the shelf and two errors**: the function read the balance without locking it, so every count saw 0 and added 5 |
 
 ## D. Picking
 
@@ -138,10 +141,19 @@ After B10–B14, `received_qty` on that line must still be `0`. Nothing was part
 | D1 | auto | Menu → Picks waiting | The first task in walking order: "Pick 20 × Hex nut M8 from A-01-2." |
 | D2 | auto | Scan `LOC-B-01-2` (wrong shelf) | "Wrong shelf. Go to A-01-2." |
 | D3 | auto | Scan `LOC-A-01-2` | Accepted → "Scan the article" |
-| D4 | auto | Scan `4000000001006` (wrong article) | "Wrong article. This task wants Hex nut M8." |
+| D4 | auto | Scan `4000000001006` (wrong article) | "Wrong article. This task wants Hex nut M8." The check is by SKU: it used to compare product names, which aren't unique |
 | D5–6 | auto | Scan `4000000001002`, enter `20` | "Picked 20 × Hex nut M8." Task `done`; `A-01-2` goes 120 → 100, exactly once |
 | D7 | auto | Task 3 (DIN rail): 10 requested, 8 on the shelf. Enter `8` | "Short pick recorded: 8 of 10 × DIN rail 35mm. 2 still owed." Task status `short`, not `done`. Not rounded, not retried |
-| D8 | manual | Task 3, enter `10` when only 8 are there | **Known gap.** Stock is protected (the `qty >= 0` check refuses the move, nothing is partly applied, the task stays open), but the operator gets a bare HTTP 500 instead of a message. The fix belongs in `decide_transition.js`: bound the quantity by `on_hand`, the way B14 bounds receipts |
+| D8 | auto | Task 3, enter `10` when only 8 are there | "The system shows only 8 at C-01-1. Enter 8 or less and report the difference." The task stays open. **Was a bare HTTP 500**: stock was protected by the `qty >= 0` check, but the operator got no message |
+
+### D9–D12: quantity validation
+
+The picking counterpart of B10–B14. Both were found in a later audit: picking had never been given the checks receiving already had.
+
+| # | | Enter at the quantity step | Expected |
+|---|---|---|---|
+| D9–11 | auto | `-1`, `abc`, `2.5` | "Enter how many you picked (0 if none)." **`2.5` was a bare HTTP 500**, the same bug B13 fixed for receiving |
+| D12 | auto | `25` on a task for 20 | "This task is for 20. Enter 20 or less." **Was accepted**, closing the task with `picked_qty > qty` and over-picking the order line. `wms.confirm_pick()` now refuses it on its own too |
 
 ## E. Two operators
 
@@ -190,7 +202,7 @@ SELECT * FROM wms.pick_tasks WHERE picked_qty > qty;
 bench/bench.py contention --workers 10 --per-worker 40
 ```
 
-400 receipts of the *same* article on the *same* order line, through the full HTTP path, all at once. It must end with `on_hand = ledger_rows = ledger_sum = received_qty = 400`. It resets the database afterwards.
+400 receipts of the *same* article on the *same* order line, through the full HTTP path, from 10 operators scanning at the same time. It must end with `on_hand = ledger_rows = ledger_sum = received_qty = 400`. It resets the database afterwards.
 
 ## H. Performance
 

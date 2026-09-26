@@ -1,6 +1,6 @@
 # n8n-wms: a barcode warehouse terminal served from n8n webhooks over PostgreSQL.
 #
-#   cp .env.example .env        # then set the three secrets
+#   cp .env.example .env        # then set POSTGRES_PASSWORD and N8N_ENCRYPTION_KEY
 #   docker compose up -d
 #   scripts/setup.sh            # owner account, credential, workflows -- no UI clicks
 #
@@ -10,7 +10,9 @@ name: n8n-wms
 
 services:
   postgres:
-    image: postgres:16.15-alpine
+    # 17, not 16: n8n 2.40 logs "Postgres 16 is outside the supported range" on
+    # every start. A fresh volume is needed when changing major versions.
+    image: postgres:17.11-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-wms}

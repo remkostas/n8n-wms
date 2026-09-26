@@ -14,7 +14,7 @@
 //
 // Input:
 //   session  { state, user_id, context, payload }   from wms.screen_data
-//   scan     { entity_type, entity_id, label }      from wms.resolve_barcode (may be empty)
+//   scan     { entity_type, entity_id, label, detail }  from wms.resolve_barcode (may be empty)
 //   body     { action, code }                       the submitted form
 // Output:
 //   { op, next_state, ctx_patch, msg, kind, ...params }
@@ -56,15 +56,18 @@ function out(op, nextState, patch, msg, kind, extra) {
 // operator has no way to tell a mis-scan from a broken system.
 function wrongThing(expected) {
   const got = scan ? scan.entity_type.replace('_', ' ') + ' (' + scan.label + ')' : 'nothing known';
+  const article = /^[aeiou]/.test(expected) ? 'an ' : 'a ';
   return out('none', state, null,
-    'Expected a ' + expected + ', but that barcode is ' + got + '.', 'warn');
+    'Expected ' + article + expected + ', but that barcode is ' + got + '.', 'warn');
 }
 
 // --------------------------------------------------------------- login
 
 if (action === 'login') {
   if (!code) return out('none', 'login', null, 'Scan your badge to continue.', 'warn');
-  return out('login', null, null, null, null, { badge: code });
+  // Base64 for the same comma-split reason as ctx_patch_b64.
+  return out('login', null, null, null, null,
+    { badge_b64: Buffer.from(code).toString('base64') });
 }
 
 // Any action other than login without a live session means the session expired
@@ -171,7 +174,10 @@ if (action === 'pick_location') {
 if (action === 'pick_item') {
   if (!scan) return out('none', state, null, 'Unknown barcode: ' + code, 'bad');
   if (scan.entity_type !== 'product') return wrongThing('article');
-  if (scan.label !== payload.product_name) {
+  // By SKU (resolve_barcode's `detail` for a product), not by name: SKUs are
+  // unique, names aren't, so two articles called "Cable tie" would pass for
+  // each other.
+  if (scan.detail !== payload.sku) {
     return out('none', state, null,
       'Wrong article. This task wants ' + payload.product_name + '.', 'warn');
   }
@@ -182,11 +188,30 @@ if (action === 'pick_qty') {
   const qty = Number(code);
   // Zero is legitimate here and must not be rejected: it is how an operator
   // reports an empty shelf. Refusing it would push them to invent a number.
-  if (code === '' || !isFinite(qty) || qty < 0) {
+  // Integer for the same reason as receive_qty: a decimal would die in the
+  // Postgres call as a bare 500.
+  if (code === '' || !isFinite(qty) || !Number.isInteger(qty) || qty < 0) {
     return out('none', state, null, 'Enter how many you picked (0 if none).', 'warn');
   }
   if (!ctx.task_id) {
     return out('claim_pick', null, null, 'Lost the task, fetching the next one.', 'warn');
+  }
+  // Over-pick guard, the mirror of the over-receipt guard above: a typo of 25
+  // for 20 would otherwise close the task and leave the order line picked
+  // beyond what the customer ordered. confirm_pick() refuses it too.
+  const requested = Number(payload.qty);
+  if (isFinite(requested) && requested > 0 && qty > requested) {
+    return out('none', state, null,
+      'This task is for ' + requested + '. Enter ' + requested + ' or less.', 'warn');
+  }
+  // The database refuses to take stock below zero, and before this check that
+  // refusal reached the operator as a bare HTTP 500. Saying what the system
+  // believes is on the shelf turns it into something they can act on.
+  const onHand = Number(payload.on_hand);
+  if (isFinite(onHand) && qty > onHand) {
+    return out('none', state, null,
+      'The system shows only ' + onHand + ' at ' + payload.location_code
+        + '. Enter ' + onHand + ' or less and report the difference.', 'warn');
   }
   return out('confirm_pick', null, null, null, null,
     { task_id: Number(ctx.task_id), qty: qty });

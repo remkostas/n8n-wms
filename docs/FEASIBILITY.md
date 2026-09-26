@@ -10,7 +10,7 @@ I answered it by building one and measuring it, not by reading documentation. Ev
 
 **Technically, yes, by a wider margin than I expected.** A barcode terminal served entirely from n8n webhooks over PostgreSQL is fast enough (about 130 ms per scan, end to end), correct under concurrent contention, and recoverable across page refreshes and devices.
 
-**Commercially, no, for two separate reasons.** n8n's licence forbids distributing it as part of a product. And the pitch I started from, "customisable without traditional software development", is contradicted by the code: about 60 % of the logic ended up in SQL.
+**Commercially, no, for two separate reasons.** n8n's licence forbids distributing it as part of a product. And the pitch I started from, "customisable without traditional software development", is contradicted by the code: more than half the code ended up in SQL (55–61 %, §4).
 
 **Stop as a product. Keep it as a reference implementation and a consulting asset.**
 
@@ -23,11 +23,11 @@ A working system, driven end to end over HTTP exactly as a handheld browser woul
 | | |
 |---|---|
 | **Schema** | 15 tables and 2 views in `wms`: products, warehouses, locations, inventory, inventory_transactions, purchase orders and lines, sales orders and lines, pick_tasks, putaway_tasks, users, barcode_mappings, operator_sessions, scan_events ([`db/01-schema.sql`](../db/01-schema.sql)) |
-| **Business logic** | 13 `plpgsql` functions: `receive_line`, `confirm_pick`, `claim_next_pick`, `complete_putaway`, `apply_movement`, `adjust_stock`, `suggest_putaway_location`, `resolve_barcode`, `screen_data`, `find_receipt_line`, `session_start`, `session_set_state`, `session_touch` ([`db/02-functions.sql`](../db/02-functions.sql)) |
+| **Business logic** | 11 `plpgsql` functions: `receive_line`, `confirm_pick`, `claim_next_pick`, `complete_putaway`, `apply_movement`, `adjust_stock`, `suggest_putaway_location`, `resolve_barcode`, `screen_data`, `session_start`, `session_set_state` ([`db/02-functions.sql`](../db/02-functions.sql)). The evaluation had two more, never called from the terminal; they were dropped in the audit |
 | **n8n workflows** | `WMS: Operator Terminal` (5 nodes) and `WMS: Scan Handler` (17 nodes) |
 | **State machine** | login → menu → `receiving_await_po` → `receiving_await_item` → `receiving_await_qty`; `picking_await_location` → `picking_await_item` → `picking_await_qty`; `lookup` |
 | **Working flows** | Sign-in and sessions, receiving, put-away task generation, picking including short picks, stock lookup, sign-out |
-| **Acceptance test** | [`tests/walkthrough.sh`](../tests/walkthrough.sh): 56 checks, self-resetting, asserting on what the operator sees *and* on what landed in PostgreSQL |
+| **Acceptance test** | [`tests/walkthrough.sh`](../tests/walkthrough.sh): 73 checks, self-resetting, asserting on what the operator sees *and* on what landed in PostgreSQL. Plus 42 unit tests of the Code-node logic ([`tests/unit/`](../tests/unit/)), and CI running both on every push |
 
 Nothing is mocked.
 
@@ -56,7 +56,7 @@ The ceiling comes from n8n running every execution in one process. Raising it me
 
 The only way out is to make each mutation a single database call. Every mutating operation here is a `plpgsql` function, with `SELECT … FOR UPDATE` where operators could collide.
 
-**It works and it is cheap:** about 3 ms on top of the read-only path. Under maximum contention, 400 concurrent receipts of the *same* article from a zero baseline produce `on_hand = 400, ledger_rows = 400, ledger_sum = 400`, with no lost updates. The acceptance test re-checks that invariant after every run.
+**It works and it is cheap:** about 3 ms on top of the read-only path. Under maximum contention, 400 receipts of the *same* article from a zero baseline, sent by 20 clients at once, produce `on_hand = 400, ledger_rows = 400, ledger_sum = 400`, with no lost updates. The acceptance test re-checks that invariant after every run.
 
 This is the most important structural finding, because it decides where the code has to live. That is the subject of the next section.
 
@@ -68,9 +68,9 @@ Measured at the end of the evaluation, and again on this repo:
 
 | | at evaluation | this repo (code only, no comments or blank lines) |
 |---|---:|---:|
-| SQL (schema, functions, seed) | **967 lines** | **711 lines** |
-| JavaScript inside n8n Code nodes | **624 lines** | **539 lines** |
-| SQL share | **61 %** | **57 %** |
+| SQL (schema, functions, seed) | **967 lines** | **687 lines** |
+| JavaScript inside n8n Code nodes | **624 lines** | **561 lines** |
+| SQL share | **61 %** | **55 %** |
 | Functional n8n nodes, both workflows | **22** | **22** |
 | Of those, nodes doing *business logic* | **about 0** | **about 0** |
 

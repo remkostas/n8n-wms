@@ -10,6 +10,7 @@
 # Safe to re-run: that is also how a change to src/terminal/ gets deployed.
 # Requires curl, jq and python3.
 set -euo pipefail
+# shellcheck source=scripts/lib.sh
 . "$(dirname "$0")/lib.sh"
 
 STATE="$REPO_ROOT/.setup-state"
@@ -23,14 +24,29 @@ trap 'rm -f "$JAR"' EXIT
 say() { printf '==> %s\n' "$*"; }
 die() { printf 'setup: %s\n' "$*" >&2; exit 1; }
 
+# The placeholders from .env.example are never acceptable. The demo owner
+# password is, but only while n8n listens on this machine alone: it is published
+# in this repo, and the n8n editor it unlocks can run arbitrary code.
+for var in POSTGRES_PASSWORD N8N_ENCRYPTION_KEY; do
+  [ "${!var:-change-me}" != change-me ] || die "set $var in .env (openssl rand -hex 24)"
+done
+case "${N8N_BIND%:*}" in
+  127.0.0.1|localhost|::1|'[::1]') ;;
+  *) [ "$N8N_OWNER_PASSWORD" != Demo-Password-1 ] \
+       || die "N8N_BIND=$N8N_BIND is reachable from other machines: change N8N_OWNER_PASSWORD in .env first" ;;
+esac
+
 # ---------------------------------------------------------------- wait for n8n
 
+# /healthz/readiness, not /healthz: on first boot /healthz answers 200 while n8n
+# is still migrating its database, and every /rest call in that window returns
+# a plain-text "n8n is starting up" page instead of JSON.
 say "waiting for n8n at $N8N_URL"
-for _ in $(seq 1 60); do
-  curl -sf "$N8N_URL/healthz" >/dev/null && break
+for _ in $(seq 1 90); do
+  curl -sf "$N8N_URL/healthz/readiness" >/dev/null && break
   sleep 2
 done
-curl -sf "$N8N_URL/healthz" >/dev/null || die "n8n did not come up (docker compose logs n8n)"
+curl -sf "$N8N_URL/healthz/readiness" >/dev/null || die "n8n did not come up (docker compose logs n8n)"
 
 # ---------------------------------------------------------------- owner + login
 

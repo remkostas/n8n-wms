@@ -65,13 +65,13 @@
       },
       "id": "resolve",
       "name": "Resolve Scan",
-      "notes": "alwaysOutputData because an unrecognised barcode legitimately returns no rows, and the flow must continue to tell the operator so. The sentinel '-' covers action-only submits (menu buttons) where no code was scanned: an empty parameter would be dropped by the comma-split binding rather than passed as an empty string.",
+      "notes": "alwaysOutputData because an unrecognised barcode legitimately returns no rows, and the flow must continue to tell the operator so. The code arrives base64-encoded (Read Request): the comma-split binding would otherwise look up only the part before the first comma, so 'PO-1042,x' resolved as PO-1042.",
       "parameters": {
         "operation": "executeQuery",
         "options": {
-          "queryReplacement": "={{ $('Scan Submit').first().json.body.code || '-' }}"
+          "queryReplacement": "={{ $('Read Request').first().json.code_b64 }}"
         },
-        "query": "SELECT * FROM wms.resolve_barcode($1)"
+        "query": "SELECT * FROM wms.resolve_barcode(convert_from(decode($1, 'base64'), 'utf8'))"
       },
       "position": [
         600,
@@ -243,13 +243,13 @@
       },
       "id": "login",
       "name": "Start Session",
-      "notes": "Zero rows means an unknown or inactive badge; alwaysOutputData keeps the flow alive so the operator gets told.",
+      "notes": "Zero rows means an unknown or inactive badge; alwaysOutputData keeps the flow alive so the operator gets told. Base64 for the same comma-split reason as Resolve Scan.",
       "parameters": {
         "operation": "executeQuery",
         "options": {
-          "queryReplacement": "={{ $json.badge }}"
+          "queryReplacement": "={{ $json.badge_b64 }}"
         },
-        "query": "SELECT * FROM wms.session_start($1)"
+        "query": "SELECT * FROM wms.session_start(convert_from(decode($1, 'base64'), 'utf8'))"
       },
       "position": [
         1220,

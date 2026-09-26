@@ -6,6 +6,7 @@
 # the demo stack in this repo, so it refuses any database that is not on this
 # machine unless you set I_KNOW_THIS_IS_DESTRUCTIVE=1.
 set -euo pipefail
+# shellcheck source=scripts/lib.sh
 . "$(dirname "$0")/lib.sh"
 
 host="${POSTGRES_BIND%:*}"

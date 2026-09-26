@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Lint and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: ShellCheck
+        run: shellcheck -x scripts/*.sh tests/*.sh
+
+      - name: Python compiles
+        run: python3 -m py_compile scripts/build_workflows.py bench/bench.py
+
+      - name: Code-node unit tests
+        run: node --test tests/unit/*.test.js
+
+      - name: Workflows build from templates
+        run: |
+          python3 scripts/build_workflows.py ci-credential
+          for f in workflows/dist/*.json; do
+            jq -e '[.. | strings | select(startswith("@file:") or . == "@postgres_credential_id")] | length == 0' "$f" >/dev/null \
+              || { echo "unresolved placeholder in $f"; exit 1; }
+          done
+
+  acceptance:
+    name: Acceptance test on the real stack
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure
+        run: |
+          cp .env.example .env
+          sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 24)/" .env
+          sed -i "s/^N8N_ENCRYPTION_KEY=.*/N8N_ENCRYPTION_KEY=$(openssl rand -hex 24)/" .env
+
+      - name: Start n8n and PostgreSQL
+        run: docker compose up -d --quiet-pull --wait postgres && docker compose up -d --quiet-pull n8n
+
+      - name: Install workflows (scripts/setup.sh)
+        run: scripts/setup.sh
+
+      - name: Acceptance test (tests/walkthrough.sh)
+        run: tests/walkthrough.sh
+
+      - name: Contention test (10 operators, 100 receipts of one article, must reconcile exactly)
+        run: bench/bench.py contention --workers 10 --per-worker 10
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --tail 200
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

@@ -22,7 +22,12 @@ for (const part of String(raw).split(';')) {
   if (!s) continue;
   const eq = s.indexOf('=');
   if (eq < 1) continue;
-  cookies[s.slice(0, eq)] = decodeURIComponent(s.slice(eq + 1));
+  // Every cookie for this host arrives here, not just ours, and one malformed
+  // %-escape in any of them would make decodeURIComponent throw and take the
+  // whole terminal down with a 500. Keep the raw value instead.
+  let value = s.slice(eq + 1);
+  try { value = decodeURIComponent(value); } catch (e) { /* keep it raw */ }
+  cookies[s.slice(0, eq)] = value;
 }
 
 // The `t` form field (added by Render Screen to every authenticated form) is
@@ -35,8 +40,15 @@ for (const part of String(raw).split(';')) {
 const body = req.body || {};
 const token = cookies.wms_session || body.t || '';
 
+// The scanned code, base64-encoded for Resolve Scan. The Postgres node splits
+// its parameters on commas and silently drops the extras, so a raw
+// 'PO-1042,x' was looked up as 'PO-1042' and accepted. The '-' sentinel
+// covers menu buttons, which submit no code: it matches no barcode.
+const code = String(body.code === undefined ? '' : body.code).trim();
+
 return [{ json: {
   token: token,
+  code_b64: Buffer.from(code || '-').toString('base64'),
   // Passed through so the screen_data query parameter is never null: the
   // Postgres node's comma-split parameter binding treats an empty segment as a
   // missing parameter rather than an empty string.

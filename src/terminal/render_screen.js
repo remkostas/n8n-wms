@@ -55,7 +55,8 @@ const CSS = [
   'header{display:flex;align-items:center;justify-content:space-between;gap:.75rem;',
   'padding:.9rem 1rem;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}',
   'header .title{font-weight:650;font-size:1.05rem}',
-  'header .who{color:var(--muted);font-size:.85rem}',
+  'header .title,header button{white-space:nowrap}',
+  'header .who{color:var(--muted);font-size:.85rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
   'header a{color:var(--muted);font-size:.85rem;text-decoration:none;border:1px solid var(--line);',
   'padding:.3rem .6rem;border-radius:.4rem}',
   'main{padding:1rem;max-width:40rem;margin:0 auto}',
@@ -91,10 +92,14 @@ const CSS = [
   'td{padding:.5rem .3rem;border-bottom:1px solid #222836;font-variant-numeric:tabular-nums}',
   'tr.now td{background:#16233a}',
   '.tiles{display:grid;grid-template-columns:1fr 1fr;gap:.7rem}',
-  '.tile{display:block;text-align:center;text-decoration:none;color:var(--ink);background:var(--panel);',
+  // Each tile is a button inside its own form, and a button shrinks to its
+  // text unless the form around it stretches it to fill the grid cell.
+  '.tiles form{display:flex;margin:0}',
+  '.tile{display:block;width:100%;text-align:center;text-decoration:none;color:var(--ink);background:var(--panel);',
   'border:1px solid var(--line);border-radius:.75rem;padding:1.3rem .8rem}',
   '.tile .n{display:block;font-size:1.9rem;font-weight:700;font-variant-numeric:tabular-nums}',
   '.tile .l{display:block;color:var(--muted);font-size:.85rem;margin-top:.2rem}',
+  '.tile.badge .n{font-size:1.2rem}',
   '.big{font-size:2.4rem;font-weight:700;font-variant-numeric:tabular-nums}'
 ].join('');
 
@@ -155,7 +160,7 @@ function badgeButton(code, name, role) {
   return "<form method='post' action='/webhook/wms/scan'>"
     + "<input type='hidden' name='action' value='login'>"
     + "<input type='hidden' name='code' value='" + esc(code) + "'>"
-    + "<button class='tile' type='submit'><span class='n'>" + esc(name)
+    + "<button class='tile badge' type='submit'><span class='n'>" + esc(name)
     + "</span><span class='l'>" + esc(role) + '</span></button></form>';
 }
 
@@ -166,7 +171,7 @@ function screenLogin() {
     + '<p>Skip the badge scan and sign in directly as one of the demo operators.</p></div>'
     + "<div class='tiles'>"
     + badgeButton('BADGE-1001', 'Marijke Bakker', 'Operator')
-    + badgeButton('BADGE-1002', 'Tom', 'Operator')
+    + badgeButton('BADGE-1002', 'Tom de Vries', 'Operator')
     + badgeButton('BADGE-1003', 'Sara Yilmaz', 'Supervisor')
     + '</div>';
   return {
