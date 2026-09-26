@@ -44,10 +44,13 @@ const PICK_QTY = {
   action: 'pick_qty',
 };
 
-test('login with a badge asks for a session', () => {
-  const o = decide({ state: 'login', action: 'login', code: ' BADGE-1001 ' });
+const unb64 = (v) => Buffer.from(v, 'base64').toString('utf8');
+
+test('login with a badge asks for a session, badge intact through the comma split', () => {
+  const o = decide({ state: 'login', action: 'login', code: ' BADGE-1001,BADGE-1002 ' });
   assert.equal(o.op, 'login');
-  assert.equal(o.badge, 'BADGE-1001');
+  assert.doesNotMatch(o.badge_b64, /,/);
+  assert.equal(unb64(o.badge_b64), 'BADGE-1001,BADGE-1002');
 });
 
 test('any other action without a session is sent back to the badge screen', () => {
@@ -137,6 +140,15 @@ test('picking more than the system has on the shelf is refused with a message', 
   assert.equal(o.msg, 'The system shows only 8 at C-01-1. Enter 8 or less and report the difference.');
 });
 
+test('the picked article is checked by SKU, not by its (non-unique) name', () => {
+  const at = { state: 'picking_await_item', payload: { sku: 'SKU-1004', product_name: 'Cable tie' },
+               action: 'pick_item', code: '4000000009999' };
+  const twin = decide({ ...at, scan: { entity_type: 'product', entity_id: 99, label: 'Cable tie', detail: 'SKU-9999' } });
+  assert.equal(twin.msg, 'Wrong article. This task wants Cable tie.');
+  const right = decide({ ...at, scan: { entity_type: 'product', entity_id: 4, label: 'Cable tie', detail: 'SKU-1004' } });
+  assert.equal(right.next_state, 'picking_await_qty');
+});
+
 test('a short pick goes to the database', () => {
   const o = decide({ ...PICK_QTY, code: '8' });
   assert.equal(o.op, 'confirm_pick');
@@ -214,6 +226,14 @@ test('terminal_read_request.js falls back to the URL token', () => {
 
 test('scan_read_request.js falls back to the form token', () => {
   assert.equal(run('scan_read_request.js', {}, { headers: {}, body: { t: 'tok' } }).token, 'tok');
+});
+
+test('scan_read_request.js passes the scanned code intact through the comma split', () => {
+  const o = run('scan_read_request.js', {}, { headers: {}, body: { code: ' PO-1042,x ' } });
+  assert.doesNotMatch(o.code_b64, /,/);
+  assert.equal(unb64(o.code_b64), 'PO-1042,x');
+  // Menu buttons submit no code; the sentinel matches no barcode.
+  assert.equal(unb64(run('scan_read_request.js', {}, { headers: {}, body: {} }).code_b64), '-');
 });
 
 // ------------------------------------------------------------ redirects

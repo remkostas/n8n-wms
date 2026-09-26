@@ -10,8 +10,9 @@ Working notes for coding agents (and people) changing this repo. The README says
 
 ## Rules that aren't obvious from the code
 
+- **A mutation that reads a quantity and then writes one locks the row first** (`FOR UPDATE`). `adjust_stock()` didn't, and concurrent counts added up instead of agreeing.
 - **Invariants belong in SQL as well as in the Code node.** The terminal bound-checks quantities for a friendly message; `receive_line()` and `confirm_pick()` refuse the same thing on their own. Add both sides for any new check.
-- **n8n's Postgres node splits `queryReplacement` on commas.** Pass structured values base64-encoded (see `ctx_patch_b64`), never as raw JSON.
+- **n8n's Postgres node splits `queryReplacement` on commas and silently drops the extras.** Anything that can contain a comma goes in base64-encoded and is decoded in SQL: the context patch (`ctx_patch_b64`), and anything typed or scanned (`code_b64`, `badge_b64`). A raw `PO-1042,x` was looked up as `PO-1042`.
 - **Postgres nodes with `alwaysOutputData` emit `{}` for "no rows".** Test for the identifying field, not for an empty result.
 - **The terminal must work inside n8n's webhook CSP sandbox**, where browsers send no cookie on form POSTs. Every authenticated form carries the token as a hidden `t` field and every redirect carries it as `?t=`. A new form without `tokenField()` works in curl and fails in a real browser.
 - **A decimal or out-of-range quantity that reaches SQL becomes a bare HTTP 500.** Validate in `decide_transition.js` first.

@@ -18,9 +18,9 @@ jobs:
     name: Lint and unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
 
@@ -47,7 +47,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Configure
         run: |
@@ -56,7 +56,7 @@ jobs:
           sed -i "s/^N8N_ENCRYPTION_KEY=.*/N8N_ENCRYPTION_KEY=$(openssl rand -hex 24)/" .env
 
       - name: Start n8n and PostgreSQL
-        run: docker compose up -d --wait postgres && docker compose up -d n8n
+        run: docker compose up -d --quiet-pull --wait postgres && docker compose up -d --quiet-pull n8n
 
       - name: Install workflows (scripts/setup.sh)
         run: scripts/setup.sh
@@ -64,7 +64,7 @@ jobs:
       - name: Acceptance test (tests/walkthrough.sh)
         run: tests/walkthrough.sh
 
-      - name: Contention test (100 concurrent receipts must reconcile exactly)
+      - name: Contention test (10 operators, 100 receipts of one article, must reconcile exactly)
         run: bench/bench.py contention --workers 10 --per-worker 10
 
       - name: Logs on failure

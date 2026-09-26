@@ -14,7 +14,7 @@
 //
 // Input:
 //   session  { state, user_id, context, payload }   from wms.screen_data
-//   scan     { entity_type, entity_id, label }      from wms.resolve_barcode (may be empty)
+//   scan     { entity_type, entity_id, label, detail }  from wms.resolve_barcode (may be empty)
 //   body     { action, code }                       the submitted form
 // Output:
 //   { op, next_state, ctx_patch, msg, kind, ...params }
@@ -65,7 +65,9 @@ function wrongThing(expected) {
 
 if (action === 'login') {
   if (!code) return out('none', 'login', null, 'Scan your badge to continue.', 'warn');
-  return out('login', null, null, null, null, { badge: code });
+  // Base64 for the same comma-split reason as ctx_patch_b64.
+  return out('login', null, null, null, null,
+    { badge_b64: Buffer.from(code).toString('base64') });
 }
 
 // Any action other than login without a live session means the session expired
@@ -172,7 +174,10 @@ if (action === 'pick_location') {
 if (action === 'pick_item') {
   if (!scan) return out('none', state, null, 'Unknown barcode: ' + code, 'bad');
   if (scan.entity_type !== 'product') return wrongThing('article');
-  if (scan.label !== payload.product_name) {
+  // By SKU (resolve_barcode's `detail` for a product), not by name: SKUs are
+  // unique, names aren't, so two articles called "Cable tie" would pass for
+  // each other.
+  if (scan.detail !== payload.sku) {
     return out('none', state, null,
       'Wrong article. This task wants ' + payload.product_name + '.', 'warn');
   }

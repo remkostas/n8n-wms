@@ -24,6 +24,18 @@ trap 'rm -f "$JAR"' EXIT
 say() { printf '==> %s\n' "$*"; }
 die() { printf 'setup: %s\n' "$*" >&2; exit 1; }
 
+# The placeholders from .env.example are never acceptable. The demo owner
+# password is, but only while n8n listens on this machine alone: it is published
+# in this repo, and the n8n editor it unlocks can run arbitrary code.
+for var in POSTGRES_PASSWORD N8N_ENCRYPTION_KEY; do
+  [ "${!var:-change-me}" != change-me ] || die "set $var in .env (openssl rand -hex 24)"
+done
+case "${N8N_BIND%:*}" in
+  127.0.0.1|localhost|::1|'[::1]') ;;
+  *) [ "$N8N_OWNER_PASSWORD" != Demo-Password-1 ] \
+       || die "N8N_BIND=$N8N_BIND is reachable from other machines: change N8N_OWNER_PASSWORD in .env first" ;;
+esac
+
 # ---------------------------------------------------------------- wait for n8n
 
 # /healthz/readiness, not /healthz: on first boot /healthz answers 200 while n8n

@@ -75,6 +75,11 @@ scan m login BADGE-9999
 see "Badge not recognised." "A2 unknown badge is refused"
 db "SELECT count(*) FROM wms.operator_sessions" 0 "A2 ...and creates no session"
 
+# n8n's Postgres node splits parameters on commas and drops the extras, so
+# before the scan was base64-encoded this signed in as BADGE-1001.
+scan m login "BADGE-1001,BADGE-1002"
+see "Badge not recognised." "A7 a badge with a comma is looked up whole"
+
 scan m login BADGE-1001
 see "Signed in as Marijke Bakker" "A3 known badge signs in"
 see "Lines to receive" "A3 lands on the menu"
@@ -99,6 +104,9 @@ see "Expected an article, but that barcode is location (A-01-1)." "B3 wrong kind
 
 scan m receive_item NOT-A-BARCODE
 see "Unknown barcode: NOT-A-BARCODE" "B4 unknown barcode"
+
+scan m receive_item "4000000001007,x"
+see "Unknown barcode: 4000000001007,x" "B4b a barcode with a comma is looked up whole, not truncated"
 
 scan m receive_item 4000000001002
 see "is not on this order, or is already fully received." "B5 article not on the order"
@@ -220,6 +228,18 @@ see "Scan an article" "H2 next POST keeps the session via the form field"
 TOKEN=""
 scan nocookie start_receive
 see "Session expired. Scan your badge again." "H3 no cookie and no token means no session"
+
+# ---------------------------------------------------------------- counting
+
+section "C. Concurrent stock counts (no screen yet: wms.adjust_stock() directly)"
+# A count sets an absolute quantity. Unlocked, twenty counts of 5 at once all
+# read 0 and all added 5, leaving 30 on the shelf.
+for _ in $(seq 1 20); do
+  wms_psql -c "SELECT * FROM wms.adjust_stock(12, 13, 5, 3)" >/dev/null &
+done
+wait
+db "SELECT qty FROM wms.inventory WHERE product_id = 12 AND location_id = 13" 5 "C3 twenty simultaneous counts of 5 leave 5"
+db "SELECT count(*) FROM wms.inventory_transactions WHERE product_id = 12 AND location_id = 13" 1 "C3 ...with one ledger row"
 
 # ---------------------------------------------------------------- invariant
 
