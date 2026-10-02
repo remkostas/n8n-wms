@@ -58,7 +58,7 @@ No lost updates. The row lock serialises the writers correctly.
 
 ## 2. This repo: the real terminal
 
-Same 16-core mini PC, host otherwise idle, n8n 2.40.7 with default settings (every execution saved), PostgreSQL 16. The compose file has since moved to PostgreSQL 17, because n8n 2.40 warns that 16 is outside its supported range; the contention result below was re-checked on 17, on different hardware, and is still exact. The latency numbers were not re-measured.
+Same 16-core mini PC, host otherwise idle, n8n 2.40.7 with default settings (every execution saved), PostgreSQL 16. The compose file has since moved to PostgreSQL 17, because n8n 2.40 warns that 16 is outside its supported range, and then to 18 with n8n 2.41.4; the contention result below was re-checked on 17, on different hardware, and is still exact, and CI re-runs a 100-receipt contention test on the current stack on every push. The latency numbers were not re-measured.
 
 **A single screen** (GET with a live session: webhook → `screen_data` → render):
 

@@ -10,9 +10,9 @@ name: n8n-wms
 
 services:
   postgres:
-    # 17, not 16: n8n 2.40 logs "Postgres 16 is outside the supported range" on
-    # every start. A fresh volume is needed when changing major versions.
-    image: postgres:17.11-alpine
+    # 18: n8n 2.40 already warned that 16 is outside its supported range.
+    # Changing major version needs a fresh volume; see the volume note below.
+    image: postgres:18.6-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-wms}
@@ -22,7 +22,11 @@ services:
       # a customer would actually run.
       POSTGRES_DB: wms
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # PostgreSQL 18 images keep data in /var/lib/postgresql/18/docker and
+      # mount the volume one level up. The volume is pgdata18, not pgdata, so a
+      # PostgreSQL 16 or 17 volume from an older checkout is left untouched rather
+      # than mounted at the wrong path.
+      - pgdata18:/var/lib/postgresql
       # First boot only: creates the n8n database, then the wms schema,
       # functions and demo data. scripts/reset-db.sh re-applies db/01-03 later.
       - ./db:/docker-entrypoint-initdb.d:ro
@@ -39,7 +43,7 @@ services:
   n8n:
     # Pinned, and upstream rather than a custom build: a customer has to be able
     # to run exactly this image.
-    image: docker.n8n.io/n8nio/n8n:2.40.7
+    image: docker.n8n.io/n8nio/n8n:2.41.4
     restart: unless-stopped
     depends_on:
       postgres:
@@ -71,5 +75,5 @@ services:
       - "${N8N_BIND:-127.0.0.1:5678}:5678"
 
 volumes:
-  pgdata:
+  pgdata18:
   n8ndata:
