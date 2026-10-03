@@ -10,7 +10,7 @@ I answered it by building one and measuring it, not by reading documentation. Ev
 
 **Technically, yes, by a wider margin than I expected.** A barcode terminal served entirely from n8n webhooks over PostgreSQL is fast enough (about 130 ms per scan, end to end), correct under concurrent contention, and recoverable across page refreshes and devices.
 
-**Commercially, no, for two separate reasons.** n8n's licence forbids distributing it as part of a product. And the pitch I started from, "customisable without traditional software development", is contradicted by the code: more than half the code ended up in SQL (55–61 %, §4).
+**Commercially, no, for two separate reasons.** n8n's licence forbids distributing it as part of a product. And the pitch I started from, "customisable without traditional software development", is contradicted by the code: more than half the code ended up in SQL (54–61 %, §4).
 
 **Stop as a product. Keep it as a reference implementation and a consulting asset.**
 
@@ -27,7 +27,7 @@ A working system, driven end to end over HTTP exactly as a handheld browser woul
 | **n8n workflows** | `WMS: Operator Terminal` (5 nodes) and `WMS: Scan Handler` (17 nodes) |
 | **State machine** | login → menu → `receiving_await_po` → `receiving_await_item` → `receiving_await_qty`; `picking_await_location` → `picking_await_item` → `picking_await_qty`; `lookup` |
 | **Working flows** | Sign-in and sessions, receiving, put-away task generation, picking including short picks, stock lookup, sign-out |
-| **Acceptance test** | [`tests/walkthrough.sh`](../tests/walkthrough.sh): 73 checks, self-resetting, asserting on what the operator sees *and* on what landed in PostgreSQL. Plus 42 unit tests of the Code-node logic ([`tests/unit/`](../tests/unit/)), and CI running both on every push |
+| **Acceptance test** | [`tests/walkthrough.sh`](../tests/walkthrough.sh): 84 checks, self-resetting, asserting on what the operator sees *and* on what landed in PostgreSQL. Plus 51 unit tests of the Code-node logic ([`tests/unit/`](../tests/unit/)), and CI running both on every push |
 
 Nothing is mocked.
 
@@ -68,9 +68,9 @@ Measured at the end of the evaluation, and again on this repo:
 
 | | at evaluation | this repo (code only, no comments or blank lines) |
 |---|---:|---:|
-| SQL (schema, functions, seed) | **967 lines** | **687 lines** |
-| JavaScript inside n8n Code nodes | **624 lines** | **561 lines** |
-| SQL share | **61 %** | **55 %** |
+| SQL (schema, functions, seed) | **967 lines** | **691 lines** |
+| JavaScript inside n8n Code nodes | **624 lines** | **579 lines** |
+| SQL share | **61 %** | **54 %** |
 | Functional n8n nodes, both workflows | **22** | **22** |
 | Of those, nodes doing *business logic* | **about 0** | **about 0** |
 

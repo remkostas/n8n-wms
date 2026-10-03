@@ -98,6 +98,9 @@ Tasks are handed out in walking order (`pick_sequence`), so task 1 comes first.
 | A4 | manual | Sign in as `BADGE-1003` (Sara, supervisor) | Works the same. **The role is stored but not enforced**: no supervisor-only screens exist |
 | A5 | auto | Press "Sign out" | "Signed out.", back to the sign-in screen, cookie cleared |
 | A7 | auto | Type `BADGE-1001,BADGE-1002` as the badge | "Badge not recognised." **Signed in as Marijke**: n8n's Postgres node splits parameters on commas and drops the extras, so only `BADGE-1001` was looked up. Scanned values now travel base64-encoded |
+| A8 | auto | Replay the token from before sign-out (from browser history, or a second device on the same session) | "Session expired. Scan your badge again." The session row is gone. **Was still valid**: sign-out only cleared the cookie, so a copied token kept working |
+| A9 | auto | Sign in again with the same badge | A new token, not the old one |
+| A10 | auto | A session signed in more than 12 hours ago, still in use | Back to the sign-in screen; signing in starts a fresh session. **Was extended by every request**, so a token in use never expired |
 
 ## B. Receiving
 
@@ -170,6 +173,7 @@ The picking counterpart of B10–B14. Both were found in a later audit: picking 
 | F2 | auto | Mid-task, sign in on a second device with the same badge | The task continues there at the same step: "the handheld died, grab another one" |
 | F3 | manual | Reload repeatedly on any screen after a scan | No second booking. Every scan is POST → 303 → GET, so a reload only ever repeats a read |
 | F4 | manual | Press the browser **back** button mid-flow | The server's state wins. The next scan is judged against where the session actually is |
+| F5 | auto | Send a step from the wrong screen: the quantity or the article while the shelf scan is pending, or a shelf scan after the task is done | "That screen was out of date, so nothing was changed." The session stays where it is. **Was judged by the action alone**: a quantity sent from the shelf screen committed the pick with neither shelf nor article scanned, and a late shelf scan said "Go to undefined." |
 
 ## G. Data integrity
 

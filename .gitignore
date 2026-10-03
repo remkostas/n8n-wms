@@ -2,3 +2,4 @@
 workflows/dist/
 .setup-state
 __pycache__/
+.recovery/

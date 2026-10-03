@@ -13,7 +13,7 @@ I built a working warehouse management system to test a product idea: a self-hos
 
 ## What's interesting here
 
-**n8n can't hold a database transaction across nodes,** and every stock movement is at least two writes that must never disagree. So each mutation is one `plpgsql` call ([`db/02-functions.sql`](db/02-functions.sql)), and n8n only routes requests and renders screens. More than half the code ended up in SQL (55 % here, 61 % at evaluation). That's the main finding: the canvas stays small (5 + 17 nodes), but the business logic doesn't live on it.
+**n8n can't hold a database transaction across nodes,** and every stock movement is at least two writes that must never disagree. So each mutation is one `plpgsql` call ([`db/02-functions.sql`](db/02-functions.sql)), and n8n only routes requests and renders screens. More than half the code ended up in SQL (54 % here, 61 % at evaluation). That's the main finding: the canvas stays small (5 + 17 nodes), but the business logic doesn't live on it.
 
 **The test suite passed while the app was unusable in a browser.** n8n serves webhook HTML inside a CSP sandbox that drops cookies on form POSTs, and curl doesn't enforce CSP. The write-up, and how the terminal now works on a stock instance by carrying the session token in URLs and form fields, is in [docs/csp-sandbox.md](docs/csp-sandbox.md).
 
@@ -69,8 +69,8 @@ The full reference data and a 10-minute demo script are in [docs/TEST-CASES.md](
 ## Test it
 
 ```bash
-node --test tests/unit/*.test.js  # 42 unit tests of the Code-node logic; no stack needed
-tests/walkthrough.sh              # 73 checks: screens and database, resets itself
+node --test tests/unit/*.test.js  # 51 unit tests of the Code-node logic; no stack needed
+tests/walkthrough.sh              # 84 checks: screens and database, resets itself
 bench/bench.py contention         # 20 operators, 400 receipts of one article: must reconcile exactly
 ```
 

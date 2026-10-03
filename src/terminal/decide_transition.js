@@ -64,7 +64,9 @@ function wrongThing(expected) {
 // --------------------------------------------------------------- login
 
 if (action === 'login') {
-  if (!code) return out('none', 'login', null, 'Scan your badge to continue.', 'warn');
+  // Stay put rather than move to 'login': for a live session that would end it
+  // (see logout below).
+  if (!code) return out('none', state, null, 'Scan your badge to continue.', 'warn');
   // Base64 for the same comma-split reason as ctx_patch_b64.
   return out('login', null, null, null, null,
     { badge_b64: Buffer.from(code).toString('base64') });
@@ -77,10 +79,15 @@ if (state === 'login') {
 }
 
 if (action === 'logout') {
-  // The session row is left to expire on its own rather than deleted: an
-  // operator who signs out on a shared handheld and back in on their own should
-  // find their half-finished task still there.
-  const o = out('none', state, null, 'Signed out.', 'info');
+  // Signing out ends the session on the server: moving it to 'login' makes
+  // session_set_state delete the row. It used to be left to expire, so that an
+  // operator signing out on a shared handheld found their task again on their
+  // own -- but that also kept the token working for anyone with a copy, and on
+  // the sandboxed link the token sits in browser history. A half-finished pick
+  // still comes back: the task stays assigned to the operator and
+  // claim_next_pick returns it at the next "Picks waiting". Only the screen
+  // position is lost, e.g. which purchase order was being received.
+  const o = out('none', 'login', null, 'Signed out.', 'info');
   o[0].json.clear_cookie = true;
   return o;
 }
@@ -94,6 +101,34 @@ if (action === 'cancel') {
   if (state === 'receiving_await_qty') return out('none', 'receiving_await_item', null, null, null);
   if (state === 'picking_await_qty')   return out('none', 'picking_await_location', null, null, null);
   return out('none', 'idle', {}, null, null);
+}
+
+// --------------------------------------------------------------- screen guard
+
+// Each screen offers exactly one scan action, plus cancel and sign-out above.
+// The action field comes from the page, so it says what the page was showing,
+// not where the session is: after the back button, from a second tab or from a
+// hand-made request it can name any step. Judging it against the session's
+// state is what makes "the server's state wins" (TEST-CASES F4) true. Without
+// it, pick_qty sent from the location screen committed a pick with neither the
+// shelf nor the article ever scanned.
+const SCREEN_ACTIONS = {
+  idle:                   ['start_receive', 'start_pick', 'start_lookup'],
+  receiving_await_po:     ['receive_po'],
+  receiving_await_item:   ['receive_item'],
+  receiving_await_qty:    ['receive_qty'],
+  picking_await_location: ['pick_location'],
+  picking_await_item:     ['pick_item'],
+  picking_await_qty:      ['pick_qty'],
+  lookup:                 ['lookup_item']
+};
+let knownAction = false;
+for (const s in SCREEN_ACTIONS) {
+  if (SCREEN_ACTIONS[s].indexOf(action) !== -1) { knownAction = true; break; }
+}
+if (knownAction && (SCREEN_ACTIONS[state] || []).indexOf(action) === -1) {
+  return out('none', state, null,
+    'That screen was out of date, so nothing was changed. Carry on from here.', 'warn');
 }
 
 if (action === 'start_receive') return out('none', 'receiving_await_po', {}, null, null);

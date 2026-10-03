@@ -167,6 +167,51 @@ test('cancel steps back one level', () => {
   assert.equal(decide({ state: 'lookup', action: 'cancel' }).next_state, 'idle');
 });
 
+test('sign-out ends the session: it moves to login, which session_set_state deletes', () => {
+  const o = decide({ state: 'receiving_await_po', action: 'logout' });
+  assert.equal(o.op, 'none');
+  assert.equal(o.next_state, 'login');
+});
+
+test('an empty badge submit leaves a live session where it is', () => {
+  const o = decide({ state: 'picking_await_item', action: 'login', code: '' });
+  assert.equal(o.op, 'none');
+  assert.equal(o.next_state, 'picking_await_item');
+});
+
+const STALE = 'That screen was out of date, so nothing was changed. Carry on from here.';
+
+for (const [state, action, extra] of [
+  ['picking_await_location', 'pick_qty', { context: { task_id: 1 }, payload: { qty: 20, on_hand: 120 }, code: '20' }],
+  ['picking_await_location', 'pick_item', { payload: { sku: 'SKU-1002' }, code: '4000000001002',
+    scan: { entity_type: 'product', entity_id: 2, label: 'Hex nut M8', detail: 'SKU-1002' } }],
+  // cancel from the quantity screen keeps po_line_id in the context
+  ['receiving_await_item', 'receive_qty', { context: { po_line_id: 3, open_qty: 200 }, code: '25' }],
+  ['lookup', 'start_pick', {}],
+]) {
+  test(`${action} sent from the ${state} screen is refused and changes nothing`, () => {
+    const o = decide({ state, action, ...extra });
+    assert.equal(o.op, 'none');
+    assert.equal(o.next_state, state);
+    assert.equal(o.msg, STALE);
+  });
+}
+
+test('a shelf scan outside a pick is refused instead of saying "Go to undefined"', () => {
+  const o = decide({ state: 'idle', payload: { open_picks: 2 }, action: 'pick_location', code: 'LOC-B-01-2',
+                     scan: { entity_type: 'location', entity_id: 9, label: 'B-01-2' } });
+  assert.equal(o.msg, STALE);
+});
+
+test('a session in a state no screen knows can only cancel or sign out', () => {
+  assert.equal(decide({ state: 'no_such_screen', action: 'start_pick' }).msg, STALE);
+  assert.equal(decide({ state: 'no_such_screen', action: 'cancel' }).next_state, 'idle');
+});
+
+test('an action no screen offers is still reported as unrecognised', () => {
+  assert.equal(decide({ action: 'drop_tables' }).msg, 'Unrecognised action.');
+});
+
 test('context patches survive commas (the Postgres node splits on them)', () => {
   const o = decide({ state: 'receiving_await_po', action: 'receive_po', code: 'PO-1042',
                      scan: { entity_type: 'purchase_order', entity_id: '1', label: 'PO-1042' } });

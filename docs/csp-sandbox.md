@@ -41,7 +41,7 @@ Both of the last two approaches together, so it works either way:
 
 1. **The cookie stays the primary carrier.** Behind a proxy that strips the CSP header, it's all that's needed.
 2. **The token also travels as `t`:** as a query parameter on every redirect ([`src/terminal/build_redirect.js`](../src/terminal/build_redirect.js)) and as a hidden field on every form ([`src/terminal/render_screen.js`](../src/terminal/render_screen.js)). The request readers take the cookie first and fall back to `t`.
-3. **Sign-out leaves `t` off**, so a signed-out session can't be revived from browser history.
+3. **Sign-out ends the session on the server**, and its redirect leaves `t` off. Leaving `t` off was the original measure, and it was not enough: earlier redirects had already put the token in browser history, and it kept working after sign-out until an automated security test replayed one. The session row is now deleted at sign-out, and every session ends 12 hours after sign-in however busy it is, so a token found in history has a bounded life.
 
 So `compose.yml` runs **upstream n8n with the sandbox left on.** Section H of the acceptance test simulates the sandboxed browser by sending no cookies at all.
 

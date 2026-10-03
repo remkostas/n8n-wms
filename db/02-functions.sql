@@ -31,8 +31,13 @@ BEGIN
     RETURN;
   END IF;
 
+  -- A session lives for one shift from the moment it was created, however
+  -- busy it is. The limit used to be 12 hours since the last request, so a
+  -- token that kept being used never expired, and signing in again handed the
+  -- same token back. Created-at also matches the cookie's Max-Age, so the
+  -- server now enforces what the cookie only suggested.
   SELECT * INTO v_sess FROM wms.operator_sessions s
-   WHERE s.user_id = v_user.id AND s.last_seen_at > now() - INTERVAL '12 hours'
+   WHERE s.user_id = v_user.id AND s.created_at > now() - INTERVAL '12 hours'
    ORDER BY s.last_seen_at DESC LIMIT 1;
 
   IF NOT FOUND THEN
@@ -61,6 +66,16 @@ CREATE OR REPLACE FUNCTION wms.session_set_state(p_token text, p_state text, p_c
     AS $$
 DECLARE v_sess wms.operator_sessions%ROWTYPE;
 BEGIN
+  -- 'login' is the state of having no session (screen_data reports it for a
+  -- missing or expired token), so storing it would be meaningless. Moving a
+  -- session there deletes it instead: that is how signing out ends a session on
+  -- the server rather than only clearing the cookie, which left the token
+  -- working for anyone who had a copy of it.
+  IF p_state = 'login' THEN
+    DELETE FROM wms.operator_sessions s WHERE s.token = p_token;
+    RETURN;
+  END IF;
+
   UPDATE wms.operator_sessions s
      SET state = p_state,
          context = CASE
@@ -102,7 +117,7 @@ BEGIN
   END IF;
 
   UPDATE wms.operator_sessions s SET last_seen_at = now()
-   WHERE s.token = p_token AND s.last_seen_at > now() - INTERVAL '12 hours'
+   WHERE s.token = p_token AND s.created_at > now() - INTERVAL '12 hours'
    RETURNING * INTO v_sess;
 
   IF NOT FOUND THEN

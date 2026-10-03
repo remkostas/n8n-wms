@@ -147,6 +147,15 @@ section "D. Picking"
 scan m start_pick
 see "Pick 20 × Hex nut M8 from A-01-2." "D1 first task in walking order"
 
+# Steps sent from the wrong screen, as after the back button or from a second
+# tab. The action field names a step; only the session's state says which one
+# is due.
+scan m pick_qty 20
+see "That screen was out of date, so nothing was changed." "F5 quantity sent from the shelf screen is refused"
+scan m pick_item 4000000001002
+see "That screen was out of date, so nothing was changed." "F5 article sent from the shelf screen is refused"
+db "SELECT qty FROM wms.stock_on_hand WHERE sku = 'SKU-1002'" 120 "F5 ...nothing taken from stock"
+
 scan m pick_location LOC-B-01-2
 see "Wrong shelf. Go to A-01-2." "D2 wrong shelf refused"
 scan m pick_location LOC-A-01-2
@@ -169,6 +178,9 @@ see "Picked 20 × Hex nut M8." "D6 pick confirmed"
 db "SELECT qty FROM wms.stock_on_hand WHERE sku = 'SKU-1002'" 100 "D6 shelf stock reduced once"
 db "SELECT status FROM wms.pick_tasks WHERE id = 1" "done" "D6 task done"
 db "SELECT status FROM wms.sales_orders WHERE order_number = 'SO-2075'" picking "D6 order in progress"
+scan m pick_location LOC-A-01-2
+see "That screen was out of date, so nothing was changed." "F5 shelf scan after the task is done is refused"
+not_see "Go to undefined" "F5 ...instead of pointing at an undefined shelf"
 
 section "E. Two operators"
 open_terminal t
@@ -211,11 +223,30 @@ scan m start_receive
 open_terminal m2
 scan m2 login BADGE-1001
 see "Scan the purchase order" "F2 sign in on another device resumes the same task"
+OLD_TOKEN="$TOKEN"
 
 scan m logout
 see "Signed out." "A5 sign out"
 open_terminal m
 see "Quick demo sign-in" "A5 cookie is cleared"
+db "SELECT count(*) FROM wms.operator_sessions WHERE token = '$OLD_TOKEN'" 0 "A8 sign out ends the session on the server"
+open_terminal m2
+see "Quick demo sign-in" "A8 ...on every device that shared it"
+TOKEN="$OLD_TOKEN"
+scan nocookie start_lookup
+see "Session expired. Scan your badge again." "A8 a token saved from before sign-out no longer works"
+
+scan m login BADGE-1001
+if [ -n "$TOKEN" ] && [ "$TOKEN" != "$OLD_TOKEN" ]; then ok "A9 signing in again issues a new token"; else fail "A9 signing in again reused the old token"; fi
+
+# Age the session past one shift while keeping it busy: last_seen_at is now,
+# so only the absolute limit can end it.
+EXPIRED="$TOKEN"
+wms_psql -c "UPDATE wms.operator_sessions SET created_at = now() - INTERVAL '13 hours', last_seen_at = now() WHERE token = '$EXPIRED'" >/dev/null
+open_terminal m
+see "Quick demo sign-in" "A10 a session older than one shift ends even while in use"
+scan m login BADGE-1001
+if [ -n "$TOKEN" ] && [ "$TOKEN" != "$EXPIRED" ]; then ok "A10 ...and signing in starts a fresh one"; else fail "A10 signing in revived the expired session"; fi
 
 # ---------------------------------------------------------------- CSP sandbox
 
