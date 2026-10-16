@@ -2,7 +2,7 @@
 
 The technical question had a clear answer (it works). The commercial question had one too: it doesn't work as a product, and the reasons are more interesting than the benchmark.
 
-> Not legal advice. The licence readings below come from n8n's own LICENSE.md and support documentation, quoted verbatim. Anyone planning to sell work built this way should confirm their own case with n8n directly.
+> Not legal advice. The licence readings below come from n8n's own LICENSE.md and its help-center licence article, quoted verbatim. n8n revised that article on 6 October 2026, and this page was updated to match on 16 October 2026. Anyone planning to sell work built this way should confirm their own case with n8n directly.
 
 ## 1. The licence decides the shape
 
@@ -12,24 +12,37 @@ n8n is released under the **Sustainable Use License**, not an OSI open-source li
 
 > "You may distribute the software or provide it to others **only if you do so free of charge for non-commercial purposes**."
 
-And from n8n's support documentation:
+n8n's help-center article on which licence you need (last updated 6 October 2026) draws the line at who builds the workflows:
 
-> "If your role is limited to assisting your clients with setting up their own internal instances of n8n, **no commercial license would be required on your part**."
+> "If only you or people in your organization create or edit workflows, you can use the Community edition for free."
 
-> "If you intend to host and manage your clients' workflows and credentials within **your own internal n8n instance**, an Enterprise license would be required."
+> "This includes building and running workflows for your clients on your own instance, charging them for that work, and letting them connect their own accounts."
+
+> "You need a commercial license if people outside your organization can build or configure workflows."
+
+> "You install and manage n8n on a client's own server: allowed, as long as you don't also host it for them."
+
+> "You also need one to host n8n as a service, to white-label it, or to use features that require a license key."
+
+The article also says: "We can't confirm from this help desk whether your specific use case is allowed." Questions about a specific case go to license@n8n.io.
+
+### What changed in October 2026
+
+When this analysis was first written (July 2026), the same article said: "If you intend to host and manage your clients' workflows and credentials within your own internal n8n instance, an Enterprise license would be required." The revised article allows building and running workflows for clients on your own instance, as long as people outside your organisation don't build or configure workflows. That moves one row of the table below. It doesn't change the conclusion: shipping n8n as part of a product is still commercial distribution.
 
 Mapped onto the ways this could be sold:
 
 | Shape | Status |
 |---|---|
 | A company runs n8n Community for its own warehouse | ✅ Internal business use |
-| A consultant sets up the company's own instance | ✅ Explicitly permitted by n8n |
+| A consultant installs and manages n8n on the company's own server | ✅ Allowed, as long as the consultant doesn't also host it for them |
 | The consultant delivers their own schema and workflows onto that instance | ✅ Likely fine: that's the consultant's work, not n8n's software. The one boundary worth confirming in writing. |
-| The consultant hosts the WMS for the customer | ⚠️ Needs an Enterprise licence |
-| White-labelled so the customer never sees n8n | ⚠️ Needs an Embed licence |
+| The consultant runs the WMS on their own instance, and the warehouse only uses the terminal | ⚠️ Possibly allowed since the October 2026 revision: operators only use the terminal and never build or configure workflows. Before that revision this needed an Enterprise licence. Confirm with n8n before relying on it. |
+| The customer's own people build or change workflows on an instance the consultant runs | ⚠️ Needs a commercial (Enterprise) licence |
+| White-labelled so the customer never sees n8n | ⚠️ Needs a commercial licence ([n8n Embed](https://docs.n8n.io/embed/)) |
 | An appliance or image containing n8n, sold as a product | ❌ Commercial distribution: not permitted |
 
-**A product is ruled out; a service is possible.** As soon as "the WMS" is something you ship rather than something you configure on the customer's own n8n, you are distributing n8n commercially.
+**A product is ruled out; a service is possible.** As soon as "the WMS" is something you ship rather than something you configure and run as a service, you are distributing n8n commercially.
 
 Community Edition is technically enough for an SME. Workflows and executions are unlimited, queue mode is included (so the measured ~50 executions/s ceiling is a default, not a hard cap), and warehouse operators never log in to n8n at all. They only hit webhooks from a browser, so Community Edition's lack of user roles never affects them.
 
@@ -62,11 +75,12 @@ The sensible route into software from here is the usual one: do the work as serv
 
 - **As a product:** no. The licence rules it out, and the free incumbents are better.
 - **As a service on the customer's own n8n:** permitted and technically sound. The economics depend on reuse across several implementations; one-off, it doesn't beat ordinary consulting.
+- **As a service on your own instance:** possibly permitted since n8n's October 2026 revision, as long as the warehouse only uses the terminal. Confirm with n8n first.
 - **As evidence:** this is what it's actually for. It shows n8n *can* serve fast, correct, stateful UI, where exactly it stops being the right tool, and how to test the difference.
 
 ### Sources
 
 - [n8n Sustainable Use License (LICENSE.md)](https://github.com/n8n-io/n8n/blob/master/LICENSE.md)
-- [n8n Help Center: which license do I need for my use case?](https://support.n8n.io/article/can-i-use-your-license-for-my-use-case)
+- [n8n Help Center: which license do I need for my use case?](https://support.n8n.io/article/can-i-use-your-license-for-my-use-case) (last updated 6 October 2026; quotes checked 16 October 2026)
 - [n8n Embed documentation](https://docs.n8n.io/embed/)
 - [ERPNext warehouse management review (ERP Research)](https://www.erpresearch.com/erp/erpnext/warehouse-management)
