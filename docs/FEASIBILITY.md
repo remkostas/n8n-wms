@@ -110,7 +110,7 @@ The pitch was "a workflow-first, self-hosted WMS built on n8n that can be custom
 
 ## 5. Commercial position
 
-In short: the licence rules out shipping it as a product, a services model on the customer's own n8n instance is permitted, and ERPNext already covers the general-purpose WMS space for free. Detail in [COMMERCIAL.md](COMMERCIAL.md).
+In short: the licence rules out shipping it as a product, a services model on the customer's own n8n instance is permitted, and ERPNext already covers the general-purpose WMS space for free. Since n8n revised its licence guidance in October 2026, running it as a service on your own instance may be allowed too, as long as the customer never builds or configures workflows. Detail in [COMMERCIAL.md](COMMERCIAL.md).
 
 ---
 
